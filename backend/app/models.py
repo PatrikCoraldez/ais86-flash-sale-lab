@@ -129,3 +129,23 @@ class Notification(Base):
         UniqueConstraint("dataset_id", "order_id", name="uq_notifications_dataset_order"),
         Index("ix_notifications_dataset", "dataset_id"),
     )
+class BillingInvoice(Base):
+    __tablename__ = "billing_invoices"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    dataset_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    request_body: Mapped[dict] = mapped_column(JSON_VALUE, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    __table_args__ = (Index("ix_billing_invoices_status_next", "status", "next_attempt_at"),)

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import CAMPAIGN, utcnow
 from .events import build_order_created_event, iso8601
-from .models import Order, OrderItem, Outbox, Product
+from .models import BillingInvoice, Order, OrderItem, Outbox, Product
 from .schemas import OrderCreate
 from .security import (
     ApiError,
@@ -157,7 +157,7 @@ async def _create_or_replay(
                     unit_price_cents=item["unit_price_cents"],
                 )
             )
-
+        await session.flush()
         # Evento order.created: se guarda en la outbox DENTRO de la misma
         # transacción que el pedido y el inventario.
         event_payload = build_order_created_event(
@@ -179,6 +179,35 @@ async def _create_or_replay(
                 order_id=order_id,
                 payload=event_payload,
                 status="pending",
+            )
+        )
+
+        # Semana 11: tarea de facturación pendiente, con snapshot inmutable del
+        # pedido. Se guarda en la MISMA transacción; la llamada HTTP al servicio
+        # de facturación la hace el worker después, fuera de esta transacción.
+        session.add(
+            BillingInvoice(
+                order_id=order_id,
+                dataset_id=dataset_id,
+                status="pending",
+                attempts=0,
+                next_attempt_at=created_at,
+                created_at=created_at,
+                updated_at=created_at,
+                request_body={
+                    "order_id": str(order_id),
+                    "currency": "PEN",
+                    "items": [
+                        {
+                            "product_id": item["product_id"],
+                            "name": item["name"],
+                            "quantity": item["quantity"],
+                            "unit_price_cents": item["unit_price_cents"],
+                        }
+                        for item in items_out
+                    ],
+                    "total_cents": total_cents,
+                },
             )
         )
 

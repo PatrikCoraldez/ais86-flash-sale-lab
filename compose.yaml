@@ -6,6 +6,8 @@ x-app: &app
     DATABASE_URL: postgresql+psycopg://flash:${POSTGRES_PASSWORD:-}@db:5432/flash
     REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
     LAB_KEY: ${LAB_KEY:-}
+    BILLING_BASE_URL: ${BILLING_BASE_URL:-}
+    BILLING_TOKEN: ${BILLING_TOKEN:-}
   init: true
   restart: unless-stopped
   cap_drop: [ALL]
