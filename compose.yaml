@@ -1,0 +1,74 @@
+name: ais86-flash
+x-app: &app
+  build: .
+  image: ais86-flash:s09
+  environment:
+    DATABASE_URL: postgresql+psycopg://flash:${POSTGRES_PASSWORD:-}@db:5432/flash
+    REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+    LAB_KEY: ${LAB_KEY:-}
+  init: true
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+  logging:
+    options:
+      max-size: 10m
+      max-file: "2"
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flash
+      POSTGRES_USER: flash
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U flash -d flash"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    command: [redis-server, --appendonly, "yes", --requirepass, "${REDIS_PASSWORD:-}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: [CMD-SHELL, 'test "$$(redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping)" = PONG']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  api:
+    <<: *app
+    ports: ["127.0.0.1:${FLASH_PORT:-8019}:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+  worker:
+    <<: *app
+    command: [python, -m, app.worker]
+    depends_on:
+      api: {condition: service_healthy}
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    profiles: [share]
+    command: [tunnel, --no-autoupdate, --protocol, http2, --url, "http://api:8000"]
+    depends_on:
+      api: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+volumes:
+  postgres-data:
+  redis-data:

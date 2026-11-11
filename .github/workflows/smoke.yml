@@ -1,0 +1,17 @@
+name: Starter smoke
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/init_env.py
+      - run: docker compose up --build -d --wait --wait-timeout 180
+      - run: docker compose exec -T api python /app/tools/smoke.py --target http://127.0.0.1:8000
+      - if: failure()
+        run: docker compose logs --tail 80 api worker
+      - if: always()
+        run: docker compose down -v
